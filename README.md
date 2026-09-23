@@ -1,96 +1,136 @@
 # claude-decide
 
-Plugin de Claude Code: un modelo de decisión puntúa **cada** skill, rule y agente del catálogo frente
-a la petición del usuario, y a Claude le llega la lista ordenada de lo que encaja, sin que tenga que
-leer descripciones ni elegir. El modelo de prueba es [Laya Multilingual](https://huggingface.co/convaiinnovations/laya-multilingual);
-está pensado para cambiarlo por uno afinado o por uno mejor.
+Plugin de Claude Code: un modelo de decisión puntúa **cada** skill, rule, agente y tool MCP frente a
+la petición del usuario (y otra vez en cada paso de Claude), y a Claude le llega solo lo que encaja.
+Lo que recorta de su contexto se lo devuelve únicamente cuando el modelo lo elige. El modelo de
+prueba es [Laya Multilingual](https://huggingface.co/convaiinnovations/laya-multilingual); está
+pensado para cambiarlo por uno afinado o por uno mejor.
 
-**Estado: fase 1, observación.** Puntúa y apunta cada decisión, pero por defecto no inyecta nada ni
-quita nada del contexto. Con Laya sin afinar, las sugerencias todavía no son fiables (ver Mediciones).
-
-## Cómo decide
+## Cómo funciona
 
 ```
-petición ──► hook.py (UserPromptSubmit) ──► daemon.py (modelo cargado una vez)
-                                               ├─ catalog.py: skills, rules y agentes que carga Claude Code
-                                               ├─ scorer.py: una pregunta sí/no por elemento, todas en una pasada
-                                               └─ ranking ──► logs/decisions.jsonl  (+ contexto de Claude en modo inject)
+petición / cada herramienta ──► hook.py (UserPromptSubmit, PostToolUse)
+                                   └─► daemon.py (modelo cargado una vez, 127.0.0.1:7717)
+                                         ├─ catalog.py      skills, rules, agentes y tools MCP activos
+                                         ├─ scorer.py       una pregunta sí/no por elemento, en una pasada
+                                         └─ contexto        lo que Claude no tiene ya ──► additionalContext
+library.py ── recorta ~/.claude/settings.json y ~/.claude/rules, y lo deshace
 ```
 
-- **Catálogo**: lo mismo que ve Claude Code: `~/.claude/{skills,rules,agents}`, los plugins activados
-  en los settings y el `.claude` del proyecto. Las skills con `disable-model-invocation: true` no
-  entran: Claude tampoco las ve.
-- **Puntuación**: estado = la petición; una pregunta `noul` por elemento («Is this Claude Code skill
-  useful for handling the user's request? …»). A cada elemento se le resta su «sí» medio sobre diez
-  peticiones de calibración (`prior.json`, se recalcula solo si cambia la descripción). Es el patrón
-  del Atlas de Text-Decision-Benchmark.
-- **Hook**: si el daemon no responde, lo lanza en segundo plano y esa vez no hace nada. Nunca bloquea
-  ni rompe una petición.
+- **Catálogo**: lo que Claude Code carga: `~/.claude/{skills,rules,agents}`, los plugins activados,
+  el `.claude` del proyecto y las tools de los servidores MCP configurados (`mcp_catalog.py` las pide
+  con `tools/list` por stdio o http y las guarda en caché un día).
+- **Puntuación**: estado = la petición; una pregunta `noul` por elemento, con el «sí» medio de cada
+  elemento restado (calibración sobre diez peticiones genéricas). Es el patrón del Atlas de
+  Text-Decision-Benchmark.
+- **Qué se inyecta de cada elegido**:
+
+  | Elemento elegido | Qué recibe Claude |
+  |---|---|
+  | skill recortada (`name-only`) | su descripción entera |
+  | rule en la librería | su texto entero |
+  | tool MCP | su descripción y `ToolSearch select:…` para cargarla sin buscar |
+  | lo demás | el nombre y la puntuación |
+
+- **Cada paso**: en PostToolUse vuelve a puntuar con «petición + herramienta en curso» y manda como
+  mucho 2 elementos que no haya mandado ya en esa petición.
+- **Sin daemon**: el hook lo lanza en segundo plano y esa vez no hace nada. Nunca bloquea ni rompe
+  una petición.
+
+## Qué se puede recortar y qué no
+
+| | Cómo | Se ahorra |
+|---|---|---|
+| Skills propias (`~/.claude/skills`) | `skillOverrides: "name-only"`: Claude ve el nombre, puede usarla, y recibe la descripción si se elige | Sí |
+| Rules | Se mueven a `~/.claude/library/rules` y entran si se eligen | Sí, pero son fijas por defecto |
+| Skills de plugins | Claude Code no les aplica `skillOverrides`; solo se quitan desactivando el plugin entero (y con él sus hooks) | No: solo ranking |
+| Agentes | No hay forma de ocultarlos | No: solo ranking |
+| Tools MCP | Claude Code ya las difiere; aquí se le dice cuál cargar | Una búsqueda, no contexto |
+
+Las rules son fijas por defecto porque Laya todavía falla lo obvio (con «haz commit», `git-commits`
+queda en el puesto 14). `library.py manage rule:x` saca una cuando haga falta.
 
 ## Instalación
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # o apunta a un entorno que ya tenga laya
-claude --plugin-dir /ruta/a/claude-decide
+claude plugin marketplace add /ruta/a/claude-decide
+claude plugin install claude-decide@claude-decide --scope user
+python3 library.py apply        # recorta tus skills propias; `restore` lo deshace todo
 ```
 
-| Variable | Para qué | Por defecto |
+`library.py` guarda lo que cambió en `~/.claude-decide/state.json` y una copia de `settings.json`
+anterior a la primera escritura en `~/.claude-decide/settings.json.bak`. Si el usuario ya tenía un
+override propio para una skill, no la toca. `apply` se niega si el plugin no está activo: sin su hook,
+Claude se quedaría sin descripciones en todas las sesiones.
+
+| Variable (en el `env` de `~/.claude/settings.json`) | Para qué | Por defecto |
 |---|---|---|
-| `CLAUDE_DECIDE_PYTHON` | Python con `laya` para lanzar el daemon | `.venv/bin/python` |
-| `CLAUDE_DECIDE_MODE` | `log` solo apunta; `inject` le pasa la lista a Claude | `log` |
+| `CLAUDE_DECIDE_PYTHON` | Python con `laya` para lanzar el daemon | `.venv/bin/python` del plugin |
+| `CLAUDE_DECIDE_HF_HOME` | Caché de Hugging Face donde ya está Laya | la de siempre |
+| `CLAUDE_DECIDE_MODE` | `auto` inyecta si hay algo recortado; `inject` siempre; `log` nunca | `auto` |
 | `CLAUDE_DECIDE_MODEL` | Modelo de decisión (`MODELS` en `model.py`) | `laya` |
 | `CLAUDE_DECIDE_DEVICE` | `cuda` o `cpu` | el que vea torch |
 | `CLAUDE_DECIDE_PORT` | Puerto local del daemon | `7717` |
-| `HF_HOME` | Caché de Hugging Face, si Laya ya está descargada en otro sitio | la de siempre |
+| `CLAUDE_DECIDE_HOME` | Estado, prior, caché MCP y logs | `~/.claude-decide` |
 
-Van en el `env` de `~/.claude/settings.json` o en la shell que abre Claude Code.
+Cada decisión queda en `~/.claude-decide/logs/decisions.jsonl` (petición o paso → ranking).
 
 ## Mediciones
 
-`python bench/run.py`: 30 peticiones con los elementos correctos etiquetados y 3 que no deberían
-activar nada, sobre los 28 elementos de esta máquina. RTX 4050 Laptop.
+### Acierto (`python bench/run.py`)
 
-| Variante | Prior | hit@1 | hit@3 | recall@5 | MRR | máx. en negativas | ms |
-|---|---|---|---|---|---|---|---|
-| Una pasada, pregunta en inglés | sí | **0,43** | **0,60** | 0,57 | **0,57** | 0,90 | 111 |
-| Una pasada, pregunta en inglés | no | 0,23 | 0,40 | 0,54 | 0,38 | 0,95 | 113 |
-| Una pasada, pregunta en español | sí | 0,20 | 0,50 | 0,53 | 0,39 | 0,85 | 113 |
-| Una llamada por elemento (como el Atlas) | sí | 0,27 | 0,60 | 0,64 | 0,45 | 0,61 | 314 |
+Peticiones con los elementos correctos etiquetados y 3 que no deberían activar nada. RTX 4050
+Laptop, pregunta en inglés con prior (la mejor variante; la tabla completa la imprime el script).
 
-Al azar, hit@1 rondaría 0,05 y hit@3 0,15. Otras dos redacciones de la pregunta en inglés quedaron
-por debajo (hit@1 0,30 y 0,33).
+| Catálogo | hit@1 | hit@3 | recall@5 | MRR | máx. en negativas | ms |
+|---|---|---|---|---|---|---|
+| 28 elementos (skills, rules), 33 peticiones | 0,43 | 0,60 | 0,57 | 0,57 | 0,90 | 111 |
+| 45 elementos (+17 tools MCP), 39 peticiones | 0,36 | 0,56 | 0,53 | 0,50 | 0,91 | ~190 |
 
-Lo que dicen los números:
+- **El prior es obligatorio**: sin él, el hit@1 cae a 0,11–0,23.
+- **La pregunta en inglés gana**: en español, 0,19–0,20.
+- **Una llamada por elemento, como el Atlas**, no mejora y tarda el triple.
+- **Las tools MCP salen mejor que las skills**: en los 6 casos MCP, 2 salen primeras y 4 entre las
+  3 primeras. Sus descripciones dicen qué hacen; las de muchas skills dicen cuándo usarlas.
+- **No sabe decir «nada»**: a «hola» le da ≥0,9 a alguna skill, así que ningún umbral separa una
+  petición que no necesita nada de una que sí, y siempre inyecta algo.
 
-- **Rápido de sobra**: ~110 ms por petición para todo el catálogo. El cuello no es la latencia.
-- **El prior es obligatorio**: duplica el hit@1. Sin él, las skills con descripciones como «You MUST
-  use this before any creative work» copan el ranking.
-- **No sabe decir «nada»**: a «hola» le da 0,95 a alguna skill. Ningún umbral separa una petición
-  que no necesita nada de una que sí; por eso manda el top 5.
-- **Falla en lo obvio**: con «haz commit de estos cambios», la regla `git-commits` queda en el puesto 14.
-- **Precisión baja**: con el top 5, solo ~1 de cada 5 sugerencias es correcta. Por eso el modo por
-  defecto es `log`.
+### Contexto (`claude -p --output-format json`, «responde solo: ok»)
 
-Conclusión: la tubería funciona de punta a punta; el modelo sin afinar es lo que falta. El log de
-`logs/decisions.jsonl` (petición → ranking) más lo que Claude usó de verdad en cada sesión son justo
-los pares que hacen falta para afinarlo.
+| | Tokens de entrada |
+|---|---|
+| Sin plugin | 26.335 |
+| Plugin instalado, sin recorte (modo `auto` no inyecta) | 26.335 |
+| `library.py apply` (4 skills propias a solo nombre), incluidas ~180 de inyección | 25.833 |
+
+El recorte quita ~680 tokens y la inyección devuelve ~180. Las descripciones de skills de plugins,
+que no se pueden recortar, suman ~1.900 tokens fijos (`claude plugin details`: superpowers ~840,
+ponytail ~985, frontend-design ~80). Aun recortándolo todo, el techo en esta máquina está en torno
+al 10 % del contexto fijo, y ese contexto ya se cobra casi siempre como lectura de caché.
+
+### Comprobado en una sesión real
+
+- Una skill en «solo nombre» se sigue pudiendo invocar con la herramienta Skill.
+- Claude solo ve su nombre, y la descripción le llega por claude-decide cuando se elige.
+- PostToolUse inyecta las novedades tras cada herramienta, aunque con el ruido de Laya.
 
 ## Cambiar de modelo
 
 Cualquier objeto con `name` y `predict(state, questions)` que devuelva respuestas con forma de Laya
 (`{"answers": {id: {"noul": p}}}`) sirve. Se añade a `MODELS` en `model.py`, se elige con
 `CLAUDE_DECIDE_MODEL` y se compara con `python bench/run.py`. `remote.py` de Text-Decision-Benchmark
-ya adapta LLMs de OpenRouter a esa forma.
+ya adapta LLMs de OpenRouter a esa forma. El log de decisiones y lo que Claude usó de verdad en cada
+sesión son los pares para afinarlo.
 
 ## Límites conocidos
 
-- Las skills y agentes integrados en Claude Code (no están en disco) no entran en el catálogo.
-- De un plugin solo se leen `skills/` y `agents/`; rutas propias declaradas en su `plugin.json` no.
-- Fase 2 (recortar de verdad el contexto) y fase 3 (tools MCP y repuntuar en cada paso con
-  `PostToolUse`) están sin hacer.
+- Las skills y agentes integrados en Claude Code no están en disco y no entran en el catálogo.
+- De un plugin solo se leen `skills/` y `agents/`; los servidores MCP que traen los plugins no entran.
+- Los conectores de claude.ai y la extensión de Chrome no se pueden listar en local.
+- Un `.mcp.json` de proyecto entra aunque el usuario no lo haya aprobado en Claude Code.
 
 ## Pruebas
 
 ```bash
-python3 -m unittest discover -s tests   # con un modelo falso, sin GPU
+python3 -m unittest discover -s tests   # modelos falsos y carpetas temporales, sin GPU ni ~/.claude
 ```
