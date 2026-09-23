@@ -1,0 +1,8 @@
+{
+  "name": "claude-decide",
+  "description": "Un modelo de decisión (Laya) puntúa skills, rules y agentes para cada petición y le pasa a Claude solo lo que encaja",
+  "version": "0.1.0",
+  "author": {
+    "name": "zamax14"
+  }
+}
