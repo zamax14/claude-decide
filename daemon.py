@@ -1,45 +1,105 @@
-"""Servidor local con el modelo cargado una vez: puntúa el catálogo para cada petición.
+"""Servidor local con el modelo cargado una vez: puntúa el catálogo y arma el contexto para Claude.
 
     python daemon.py            # escucha en 127.0.0.1:7717 (CLAUDE_DECIDE_PORT)
-    curl -s localhost:7717/score -d '{"prompt": "haz commit", "cwd": "."}'
+    curl -s localhost:7717/score -d '{"event": "UserPromptSubmit", "prompt": "haz commit", "cwd": "."}'
 
+Con cada petición del usuario puntúa todo; con cada herramienta que usa Claude (PostToolUse) vuelve
+a puntuar con el paso en curso y solo manda lo que aún no mandó en esa petición.
 Cada decisión se apunta en logs/decisions.jsonl para compararla después con lo que usó Claude.
 """
 import json
 import os
+import threading
 import time
+from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import catalog
+import mcp_catalog
 import scorer
 from model import load_model
 
-ROOT = Path(__file__).resolve().parent
 PORT = int(os.environ.get("CLAUDE_DECIDE_PORT", 7717))
-LOG = ROOT / "logs" / "decisions.jsonl"
 # ponytail: 0,5 = el «sí» habitual del elemento. Con Laya ningún umbral separa «hola» de una petición
 # real (bench: la máxima de las negativas es 0,90), así que en la práctica manda TOP_K.
 THRESHOLD = .5
 TOP_K = 5
+STEP_K = 2  # En cada herramienta, como mucho dos novedades: se llama muchas veces por petición.
+MAX_RULE = 4000  # caracteres de una rule de la librería que se inyectan
+MAX_SESSIONS = 50
 
 
-def decide(model, prior, prompt, cwd):
-    start = time.perf_counter()
-    items = catalog.build(cwd)
-    scorer.calibrate(model, items, prior)  # Solo calcula lo nuevo; con el catálogo sin cambios no cuesta nada.
-    ranked = scorer.rank(model, items, prompt, prior)
-    out = {"model": model.name, "selected": scorer.select(ranked, THRESHOLD, TOP_K), "ranking": ranked,
-           "ms": round(1000 * (time.perf_counter() - start))}
-    LOG.parent.mkdir(exist_ok=True)
-    with LOG.open("a", encoding="utf-8") as log:
-        log.write(json.dumps({"ts": time.time(), "cwd": str(cwd), "prompt": prompt[:scorer.MAX_PROMPT],
-                              "selected": [r["id"] for r in out["selected"]], "top": ranked[:TOP_K],
-                              "ms": out["ms"]}, ensure_ascii=False) + "\n")
-    return out
+def line(item, score):
+    """Una línea por elemento elegido: lo que Claude no tiene ya en su contexto."""
+    head = f"- {item['tipo']} `{item['nombre']}` ({score:.2f})"
+    if item["gestion"] == "name-only":
+        fields, _ = catalog.frontmatter(Path(item["ruta"]).read_text(encoding="utf-8", errors="replace"))
+        return f"{head}: {' '.join(fields.get('description', item['descripcion']).split())}"
+    if item["gestion"] == "library":
+        _, body = catalog.frontmatter(Path(item["ruta"]).read_text(encoding="utf-8", errors="replace"))
+        return f"{head}, rule que debes seguir:\n{body.strip()[:MAX_RULE]}"
+    if item["tipo"] == "mcp":
+        return f"{head}: {item['descripcion'][:200]} Cárgala con ToolSearch `select:{item['nombre']}`."
+    return head
 
 
-def handler(model, prior):
+def context(chosen, items, step=None):
+    if not chosen:
+        return ""
+    by_id = {i["id"]: i for i in items}
+    intro = (f"claude-decide: para el paso en curso ({step}) también encaja:" if step else
+             "claude-decide puntuó skills, rules, agentes y tools MCP para esta petición. Lo que más encaja:")
+    outro = ("\nLas demás skills siguen disponibles por su nombre."
+             if any(i["gestion"] == "name-only" for i in items) and not step else "")
+    return "\n".join([intro, *(line(by_id[r["id"]], r["score"]) for r in chosen)]) + outro
+
+
+class Decider:
+    def __init__(self, model, prior, home=catalog.HOME, data=catalog.DATA, claude_json=mcp_catalog.CLAUDE_JSON):
+        self.model, self.prior = model, prior
+        self.home, self.data, self.claude_json = home, data, claude_json
+        self.sessions = OrderedDict()  # session_id → {"prompt", "sent"}
+
+    def session(self, session_id):
+        state = self.sessions.pop(session_id, None) or {"prompt": "", "sent": set()}
+        self.sessions[session_id] = state
+        while len(self.sessions) > MAX_SESSIONS:
+            self.sessions.popitem(last=False)
+        return state
+
+    def decide(self, event):
+        start = time.perf_counter()
+        items = catalog.build(event.get("cwd") or Path.home(), self.home, self.data, self.claude_json)
+        scorer.calibrate(self.model, items, self.prior, self.data / "prior.json")  # Solo lo nuevo.
+        state = self.session(event.get("session_id", ""))
+        step = None
+        if event.get("event") == "PostToolUse":
+            step = f"{event.get('tool_name', '')} {json.dumps(event.get('tool_input', ''), ensure_ascii=False)[:300]}"
+            query = f"{state['prompt']}\nCurrent step: {step}".strip()
+        else:
+            state["prompt"], state["sent"] = event.get("prompt", ""), set()
+            query = state["prompt"]
+        ranked = scorer.rank(self.model, items, query, self.prior)
+        chosen = [r for r in scorer.select(ranked, THRESHOLD, len(ranked)) if r["id"] not in state["sent"]]
+        chosen = chosen[:STEP_K if step else TOP_K]
+        state["sent"].update(r["id"] for r in chosen)
+        out = {"model": self.model.name, "selected": chosen, "context": context(chosen, items, step and step[:80]),
+               "ms": round(1000 * (time.perf_counter() - start))}
+        self.log(event, query, out, ranked)
+        return out
+
+    def log(self, event, query, out, ranked):
+        path = self.data / "logs" / "decisions.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as log:
+            log.write(json.dumps({"ts": time.time(), "event": event.get("event"), "session": event.get("session_id"),
+                                  "cwd": str(event.get("cwd")), "query": query[:scorer.MAX_PROMPT],
+                                  "selected": [r["id"] for r in out["selected"]], "top": ranked[:TOP_K],
+                                  "ms": out["ms"]}, ensure_ascii=False) + "\n")
+
+
+def handler(decider):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):  # La consola queda para errores reales.
             pass
@@ -53,23 +113,34 @@ def handler(model, prior):
             self.wfile.write(body)
 
         def do_GET(self):
-            self.reply(200 if self.path == "/health" else 404, {"model": model.name})
+            self.reply(200 if self.path == "/health" else 404, {"model": decider.model.name})
 
         def do_POST(self):
             if self.path != "/score":
                 return self.reply(404, {"error": "ruta desconocida"})
             try:
-                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-                self.reply(200, decide(model, prior, str(body.get("prompt", "")), Path(body.get("cwd") or Path.home())))
+                event = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                self.reply(200, decider.decide(event))  # HTTPServer atiende en serie: un modelo, un estado.
             except Exception as exc:  # El hook trata cualquier error como «no inyectar nada».
                 self.reply(500, {"error": f"{type(exc).__name__}: {exc}"})
     return Handler
 
 
+def refresh_mcp():
+    """Caché de tools MCP de todos los proyectos conocidos; los servidores lentos no frenan el arranque."""
+    configs = mcp_catalog.servers(Path.home())
+    projects = catalog.read_json(mcp_catalog.CLAUDE_JSON).get("projects", {})
+    for cwd in projects:
+        configs.update(mcp_catalog.servers(cwd))
+    mcp_catalog.refresh(catalog.DATA / "mcp_tools.json", configs)
+
+
 def main():
+    threading.Thread(target=refresh_mcp, daemon=True).start()
     model = load_model()
+    decider = Decider(model, scorer.load_prior(catalog.DATA / "prior.json"))
     # Solo en local: el prompt del usuario no debe salir de la máquina.
-    server = HTTPServer(("127.0.0.1", PORT), handler(model, scorer.load_prior()))
+    server = HTTPServer(("127.0.0.1", PORT), handler(decider))
     print(f"claude-decide: {model.name} escuchando en 127.0.0.1:{PORT}", flush=True)
     server.serve_forever()
 
