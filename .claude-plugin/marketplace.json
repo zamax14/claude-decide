@@ -1,0 +1,11 @@
+{
+  "name": "claude-decide",
+  "owner": {"name": "zamax14"},
+  "plugins": [
+    {
+      "name": "claude-decide",
+      "source": "./",
+      "description": "Un modelo de decisión puntúa skills, rules, agentes y tools MCP para cada petición y le pasa a Claude solo lo que encaja"
+    }
+  ]
+}

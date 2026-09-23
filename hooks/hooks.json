@@ -6,6 +6,14 @@
           {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hook.py\"", "timeout": 5}
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hook.py\"", "timeout": 5}
+        ]
+      }
     ]
   }
 }
