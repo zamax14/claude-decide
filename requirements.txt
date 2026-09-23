@@ -1,0 +1,6 @@
+# Solo el daemon los necesita; hook.py usa la biblioteca estándar.
+# En Linux, torch solo CPU. Con GPU NVIDIA: torch==2.14.0+cu130 desde https://download.pytorch.org/whl/cu130
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.0+cpu; sys_platform == "linux"
+torch==2.14.0; sys_platform != "linux"
+laya==0.3.5
