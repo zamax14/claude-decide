@@ -29,6 +29,12 @@
  {"q": "comprueba que el fix funciona de verdad antes de decir que está listo", "gold": ["skill:superpowers:verification-before-completion"]},
  {"q": "¿qué comandos tiene ponytail?", "gold": ["skill:ponytail:ponytail-help"]},
  {"q": "¿cuánto código y dinero ahorra ponytail?", "gold": ["skill:ponytail:ponytail-gain"]},
+ {"q": "traza la cadena de llamadas desde main hasta save_user", "gold": ["mcp:mcp__codebase-memory-mcp__trace_path"]},
+ {"q": "indexa este repositorio en el grafo de código", "gold": ["mcp:mcp__codebase-memory-mcp__index_repository"]},
+ {"q": "dame el código fuente exacto de la clase UserService", "gold": ["mcp:mcp__codebase-memory-mcp__get_code_snippet"]},
+ {"q": "busca en todo el código las apariciones de TODO", "gold": ["mcp:mcp__codebase-memory-mcp__search_code"]},
+ {"q": "¿qué cambió en el código desde el último commit y a qué afecta?", "gold": ["mcp:mcp__codebase-memory-mcp__detect_changes"]},
+ {"q": "busca en la documentación de LangChain cómo crear un agente con herramientas", "gold": ["mcp:mcp__docs-langchain__search_docs_by_lang_chain", "rule:context7", "skill:find-docs"]},
  {"q": "hola", "gold": []},
  {"q": "gracias, eso es todo por hoy", "gold": []},
  {"q": "¿qué hora es en Tokio?", "gold": []}

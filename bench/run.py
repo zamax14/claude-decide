@@ -59,9 +59,11 @@ def evaluate(model, items, use_prior):
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     items = catalog.build(args[0] if args else Path.home())
-    missing = {g for c in CASES for g in c["gold"]} - {i["id"] for i in items}
-    if missing:
-        sys.exit(f"Casos con elementos que no están en el catálogo: {sorted(missing)}")
+    ids = {i["id"] for i in items}
+    missing = {g for c in CASES for g in c["gold"]} - ids
+    if missing:  # p. ej. tools MCP sin caché (python mcp_catalog.py) u otra máquina con otras skills.
+        print(f"Se saltan los casos con elementos fuera del catálogo: {sorted(missing)}")
+        CASES[:] = [c for c in CASES if not set(c["gold"]) & missing]
     model = models.load_model()
     batched = scorer.raw_scores
     variants = [(f"una pasada, pregunta {lang}", batched, q) for lang, q in QUESTIONS.items()]
