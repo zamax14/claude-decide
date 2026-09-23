@@ -7,11 +7,9 @@ medio sobre peticiones de calibración: algunos dicen «sí» a casi todo y sin 
 import hashlib
 import json
 import math
-from pathlib import Path
 
 MAX_PROMPT = 1500  # ponytail: caracteres; basta para la intención. Lo que no quepa en contexto lo rechaza el modelo.
 BATCH = 8  # Como el Atlas: con 32 una GPU de 6 GB se queda sin memoria y Laya pasa a CPU para siempre.
-PRIOR_PATH = Path(__file__).resolve().parent / "prior.json"
 QUESTION = "Is this Claude Code {tipo} useful for handling the user's request? {tipo} «{nombre}»: {descripcion}"
 # Peticiones variadas para medir cuánto dice «sí» cada elemento sin importar lo que se pida.
 # No coinciden con las de bench/cases.json, para no calibrar sobre ellas.
@@ -45,14 +43,14 @@ def prior_key(model, item):
     return hashlib.sha1(f"{model.name}\n{QUESTION.format(**item)}".encode()).hexdigest()[:16]
 
 
-def load_prior(path=PRIOR_PATH):
+def load_prior(path):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 
 
-def calibrate(model, items, prior, path=PRIOR_PATH):
+def calibrate(model, items, prior, path=None):
     """Completa el prior de los elementos nuevos o cambiados; devuelve si hubo que calcular algo."""
     missing = [i for i in items if prior_key(model, i) not in prior]
     if not missing:
@@ -63,6 +61,7 @@ def calibrate(model, items, prior, path=PRIOR_PATH):
             sums[item_id] += logit(p) / len(CALIBRATION)
     prior.update({prior_key(model, i): round(sums[i["id"]], 3) for i in missing})
     if path:
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(prior, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     return True
 
