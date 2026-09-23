@@ -40,7 +40,8 @@ def line(item, score):
         _, body = catalog.frontmatter(Path(item["ruta"]).read_text(encoding="utf-8", errors="replace"))
         return f"{head}, rule que debes seguir:\n{body.strip()[:MAX_RULE]}"
     if item["tipo"] == "mcp":
-        return f"{head}: {item['descripcion'][:200]} Cárgala con ToolSearch `select:{item['nombre']}`."
+        text = item["descripcion"] if len(item["descripcion"]) <= 200 else item["descripcion"][:200].rsplit(" ", 1)[0] + "…"
+        return f"{head}: {text} Cárgala con ToolSearch `select:{item['nombre']}`."
     return head
 
 
