@@ -68,7 +68,7 @@ Claude se quedaría sin descripciones en todas las sesiones.
 | `CLAUDE_DECIDE_PYTHON` | Python con `laya` para lanzar el daemon | `.venv/bin/python` del plugin |
 | `CLAUDE_DECIDE_HF_HOME` | Caché de Hugging Face donde ya está Laya | la de siempre |
 | `CLAUDE_DECIDE_MODE` | `auto` inyecta si hay algo recortado; `inject` siempre; `log` nunca | `auto` |
-| `CLAUDE_DECIDE_MODEL` | Modelo de decisión (`MODELS` en `model.py`) | `laya` |
+| `CLAUDE_DECIDE_MODEL` | Modelo de decisión (`MODELS` en `model.py`) o carpeta de un checkpoint de Laya | `laya` |
 | `CLAUDE_DECIDE_DEVICE` | `cuda` o `cpu` | el que vea torch |
 | `CLAUDE_DECIDE_PORT` | Puerto local del daemon | `7717` |
 | `CLAUDE_DECIDE_HOME` | Estado, prior, caché MCP y logs | `~/.claude-decide` |
@@ -86,6 +86,18 @@ Laptop, pregunta en inglés con prior (la mejor variante; la tabla completa la i
 |---|---|---|---|---|---|---|
 | 28 elementos (skills, rules), 33 peticiones | 0,43 | 0,60 | 0,57 | 0,57 | 0,90 | 111 |
 | 45 elementos (+17 tools MCP), 39 peticiones | 0,36 | 0,56 | 0,53 | 0,50 | 0,91 | ~190 |
+
+Con Laya afinada (`laya-mesa-de-ayuda-v4`, de [Laya-Finetune](https://github.com/zamax14/Laya-Finetune): afinada
+con ~11.800 tickets de mesa de ayuda, no con peticiones a Claude Code), sobre 49 elementos y la misma pregunta:
+
+| Modelo | hit@1 | hit@3 | recall@5 | MRR | media de la máxima en negativas | ms |
+|---|---|---|---|---|---|---|
+| Laya Multilingual (base) | 0,33 | 0,50 | 0,50 | 0,46 | 0,91 | ~230 |
+| **laya-mesa-de-ayuda-v4** | **0,36** | **0,53** | **0,57** | **0,51** | **0,58** | ~205 |
+
+v4 gana en todo y, sobre todo, deja de decir «sí» a todo ante «hola». Aun así, ningún umbral sirve: con
+0,65 ninguna petición negativa recibe nada, pero 14 de 36 peticiones reales se quedan vacías y la
+precisión no pasa de ~0,15. Por eso sigue mandando el top 5 con umbral 0,5.
 
 - **El prior es obligatorio**: sin él, el hit@1 cae a 0,11–0,23.
 - **La pregunta en inglés gana**: en español, 0,19–0,20.
@@ -116,7 +128,10 @@ al 10 % del contexto fijo, y ese contexto ya se cobra casi siempre como lectura 
 
 ## Cambiar de modelo
 
-Cualquier objeto con `name` y `predict(state, questions)` que devuelva respuestas con forma de Laya
+Un checkpoint de Laya afinado se usa tal cual: `CLAUDE_DECIDE_MODEL=/ruta/al/checkpoint` (la carpeta con
+`rl_agent_config.json`, el formato de `laya.load`). Cada modelo calibra su propio prior la primera vez.
+
+Cualquier otro objeto con `name` y `predict(state, questions)` que devuelva respuestas con forma de Laya
 (`{"answers": {id: {"noul": p}}}`) sirve. Se añade a `MODELS` en `model.py`, se elige con
 `CLAUDE_DECIDE_MODEL` y se compara con `python bench/run.py`. `remote.py` de Text-Decision-Benchmark
 ya adapta LLMs de OpenRouter a esa forma. El log de decisiones y lo que Claude usó de verdad en cada
