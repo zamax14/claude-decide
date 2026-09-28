@@ -17,7 +17,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-CLAUDE_JSON = Path.home() / ".claude.json"
+# Con CLAUDE_CONFIG_DIR, Claude Code guarda ahí también su .claude.json.
+CLAUDE_JSON = Path(os.environ["CLAUDE_CONFIG_DIR"]) / ".claude.json" if os.environ.get("CLAUDE_CONFIG_DIR") else Path.home() / ".claude.json"
 TIMEOUT = 10  # segundos por servidor
 TTL = 24 * 3600
 PROTOCOL = "2025-06-18"

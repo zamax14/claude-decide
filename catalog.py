@@ -14,7 +14,7 @@ from pathlib import Path
 
 import mcp_catalog
 
-HOME = Path.home() / ".claude"
+HOME = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))  # La misma variable que Claude Code.
 # Fuera de la carpeta del plugin: instalado, Claude Code lo copia a su caché y la borra al actualizar.
 DATA = Path(os.environ.get("CLAUDE_DECIDE_HOME", Path.home() / ".claude-decide"))
 MAX_DESCRIPTION = 400  # ponytail: Laya corta la pregunta a 256 tokens; lo que pase de aquí no lo lee.
