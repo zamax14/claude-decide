@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 import mcp_catalog
-from daemon import Decider
+from daemon import Decider, step_input
 from library import Library
 
 
@@ -61,6 +61,11 @@ class ContextTest(unittest.TestCase):
         self.assertEqual(self.decide(event="PostToolUse", tool_name="Bash", tool_input={})["context"], "")
         again = self.decide(event="UserPromptSubmit", prompt="docs")
         self.assertEqual([r["id"] for r in again["selected"]], ["skill:docs"])
+
+    def test_step_is_the_tool_and_its_main_input(self):
+        self.assertEqual(step_input({"file_path": "src/a.ts", "old_string": "x\ny"}), "src/a.ts")
+        self.assertEqual(step_input({"command": "npm  test\n"}), "npm test")
+        self.assertEqual(step_input(""), "")
 
     def test_sse_and_plain_json_replies(self):
         sse = 'event: message\ndata: {"jsonrpc": "2.0", "id": 2, "result": {"tools": []}}\n\n'

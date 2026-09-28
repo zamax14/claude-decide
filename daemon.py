@@ -21,8 +21,9 @@ import scorer
 from model import load_model
 
 PORT = int(os.environ.get("CLAUDE_DECIDE_PORT", 7717))
-# ponytail: 0,5 = el «sí» habitual del elemento. Con Laya ningún umbral separa «hola» de una petición
-# real (bench: la máxima de las negativas es 0,90), así que en la práctica manda TOP_K.
+# ponytail: 0,5 = el «sí» habitual del elemento, o la probabilidad con un modelo entrenado para esta tarea.
+# Con Laya base ningún umbral separa «hola» de una petición real (bench: máxima de las negativas 0,90) y
+# manda TOP_K; con laya-context_prefilter la máxima es 0,06 y el umbral decide.
 THRESHOLD = .5
 TOP_K = 5
 STEP_K = 2  # En cada herramienta, como mucho dos novedades: se llama muchas veces por petición.
@@ -43,6 +44,14 @@ def line(item, score):
         text = item["descripcion"] if len(item["descripcion"]) <= 200 else item["descripcion"][:200].rsplit(" ", 1)[0] + "…"
         return f"{head}: {text} Cárgala con ToolSearch `select:{item['nombre']}`."
     return head
+
+
+def step_input(tool_input):
+    """Lo principal de la entrada de la herramienta, como en el entrenamiento: «Bash npm test», «Edit src/a.ts»."""
+    if isinstance(tool_input, dict) and tool_input:
+        tool_input = next(iter(tool_input.values()))  # command, file_path, pattern, url…
+    text = tool_input if isinstance(tool_input, str) else json.dumps(tool_input, ensure_ascii=False)
+    return " ".join(text.split())[:300]
 
 
 def context(chosen, items, step=None):
@@ -76,12 +85,12 @@ class Decider:
         state = self.session(event.get("session_id", ""))
         step = None
         if event.get("event") == "PostToolUse":
-            step = f"{event.get('tool_name', '')} {json.dumps(event.get('tool_input', ''), ensure_ascii=False)[:300]}"
+            step = f"{event.get('tool_name', '')} {step_input(event.get('tool_input', ''))}"
             query = f"{state['prompt']}\nCurrent step: {step}".strip()
         else:
             state["prompt"], state["sent"] = event.get("prompt", ""), set()
             query = state["prompt"]
-        ranked = scorer.rank(self.model, items, query, self.prior)
+        ranked = scorer.rank(self.model, items, state["prompt"], self.prior, step or "")
         chosen = [r for r in scorer.select(ranked, THRESHOLD, len(ranked)) if r["id"] not in state["sent"]]
         chosen = chosen[:STEP_K if step else TOP_K]
         state["sent"].update(r["id"] for r in chosen)
