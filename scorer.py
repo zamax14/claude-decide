@@ -1,8 +1,10 @@
 """Puntúa cada elemento del catálogo frente a una petición: una pregunta `noul` por elemento.
 
-Estado = la petición; preguntas = una por elemento, todas en la misma llamada (Laya las resuelve
-en una pasada). Como en el Atlas de Text-Decision-Benchmark, a cada elemento se le resta su «sí»
-medio sobre peticiones de calibración: algunos dicen «sí» a casi todo y sin eso copan el ranking.
+Estado = la petición (y el paso en curso); preguntas = una por elemento, todas en la misma llamada
+(Laya las resuelve en una pasada). Como en el Atlas de Text-Decision-Benchmark, a cada elemento se le
+resta su «sí» medio sobre peticiones de calibración: algunos dicen «sí» a casi todo y sin eso copan el
+ranking. Un modelo entrenado para esta tarea (`model.prefilter`) lee el estado como lo vio al entrenar,
+{"request", "step"}, y no lleva prior: su probabilidad ya está calibrada.
 """
 import hashlib
 import json
@@ -29,9 +31,15 @@ def logit(p):
     return math.log(p / (1 - p))
 
 
-def raw_scores(model, items, prompt):
-    """Probabilidad de «sí» de cada elemento para esta petición, por lotes."""
-    state, out = prompt[:MAX_PROMPT], {}
+def state_for(model, prompt, step=""):
+    if getattr(model, "prefilter", False):
+        return {"request": prompt[:MAX_PROMPT], "step": step}
+    return f"{prompt}\nCurrent step: {step}".strip()[:MAX_PROMPT] if step else prompt[:MAX_PROMPT]
+
+
+def raw_scores(model, items, prompt, step=""):
+    """Probabilidad de «sí» de cada elemento para esta petición (y paso), por lotes."""
+    state, out = state_for(model, prompt, step), {}
     for start in range(0, len(items), BATCH):
         chunk = items[start:start + BATCH]
         answers = model.predict(state, {i["id"]: question(i) for i in chunk})["answers"]
@@ -52,6 +60,8 @@ def load_prior(path):
 
 def calibrate(model, items, prior, path=None):
     """Completa el prior de los elementos nuevos o cambiados; devuelve si hubo que calcular algo."""
+    if getattr(model, "prefilter", False):
+        return False  # Entrenado para esto: con prior, «hola» vuelve a puntuar alto (bench: 0,06 → 0,57).
     missing = [i for i in items if prior_key(model, i) not in prior]
     if not missing:
         return False
@@ -66,9 +76,10 @@ def calibrate(model, items, prior, path=None):
     return True
 
 
-def rank(model, items, prompt, prior):
-    """Todos los elementos ordenados por puntuación relativa (0–1, 0,5 = su «sí» habitual)."""
-    raw = raw_scores(model, items, prompt)
+def rank(model, items, prompt, prior, step=""):
+    """Todos los elementos ordenados por puntuación relativa (0–1, 0,5 = su «sí» habitual; sin prior, la
+    probabilidad del modelo)."""
+    raw = raw_scores(model, items, prompt, step)
     ranked = []
     for i in items:
         relative = 1 / (1 + math.exp(-(logit(raw[i["id"]]) - prior.get(prior_key(model, i), 0.0))))

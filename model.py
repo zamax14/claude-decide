@@ -15,13 +15,16 @@ os.environ.setdefault("TORCH_DISABLE_NATIVE_JIT", "1")
 os.environ.setdefault("USE_TF", "0")
 
 LAYA = "convaiinnovations/laya-multilingual@82d57fc4f2d1be3d2caac494045f2ec51d0842f3"
+# Nombre que Laya-Finetune da a un checkpoint entrenado con su tarea context_prefilter: la pregunta de scorer.py,
+# con el estado {"request", "step"}. Ese modelo ya sale calibrado y no necesita el prior.
+PREFILTER = "laya-context_prefilter"
 
 
 class Laya:
     """Laya, cargada una vez y usada en serie (el tokenizador no admite concurrencia).
 
     Sin `checkpoint`, Laya Multilingual de Hugging Face; con él, esa carpeta local. El nombre entra en
-    la clave del prior, así que cada checkpoint calibra el suyo.
+    la clave del prior, así que cada checkpoint calibra el suyo. `prefilter`: entrenado para esta tarea.
     """
 
     def __init__(self, checkpoint=None, max_len=1024, head_max_len=256, device=None):
@@ -30,6 +33,7 @@ class Laya:
         self.max_len, self.head_max_len = max_len, head_max_len
         self.lock = threading.Lock()
         self.agent = self._load(device or os.environ.get("CLAUDE_DECIDE_DEVICE"))
+        self.prefilter = self.agent.cfg.get("model_name") == PREFILTER
 
     def _load(self, device):
         import laya

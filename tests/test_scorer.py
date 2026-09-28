@@ -45,6 +45,17 @@ class ScorerTest(unittest.TestCase):
         self.assertEqual(len(scorer.raw_scores(model, items, "x")), scorer.BATCH + 1)
         self.assertEqual(model.calls, 2)
 
+    def test_prefilter_model_reads_request_and_step_without_prior(self):
+        model, prior, states = FakeModel(), {}, []
+        model.prefilter = True
+        predict = model.predict
+        model.predict = lambda state, questions: states.append(state) or predict(state["request"], questions)
+        self.assertFalse(scorer.calibrate(model, ITEMS, prior, path=None))
+        self.assertEqual(prior, {})
+        ranked = scorer.rank(model, ITEMS, "haz un commit con git", prior, step="Bash git status")
+        self.assertEqual(states[0], {"request": "haz un commit con git", "step": "Bash git status"})
+        self.assertEqual(next(r for r in ranked if r["id"] == "skill:todo")["score"], .95)  # La probabilidad tal cual.
+
     def test_logit_is_finite_at_the_edges(self):
         self.assertTrue(math.isfinite(scorer.logit(0)) and math.isfinite(scorer.logit(1)))
 
