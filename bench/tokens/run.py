@@ -119,22 +119,25 @@ def prepare_homes(saturated):
         "saturado": {"CLAUDE_DECIDE_HOME": str(sat_data), "CLAUDE_CONFIG_DIR": str(sat_home)}}
 
 
-def start_daemons(daemon_env):
-    procs = []
-    for scenario, extra in daemon_env.items():
-        env = {**os.environ, **extra, "CLAUDE_DECIDE_PORT": str(PORTS[scenario])}
-        log = open(CACHE / f"daemon-{scenario}.log", "a")
-        procs.append(subprocess.Popen([PYTHON, str(ROOT / "daemon.py")], cwd=ROOT, env=env, stdout=log, stderr=log))
-    for scenario, port in PORTS.items():
-        for _ in range(120):
-            try:
-                urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2)
-                break
-            except OSError:
-                time.sleep(1)
-        else:
-            raise SystemExit(f"el daemon de {scenario} no arrancó: mira {CACHE}/daemon-{scenario}.log")
-    return procs
+def start_daemon(scenario, extra):
+    """Un daemon por escenario y uno a la vez: dos más el tuyo no caben en una GPU de 6 GB y pasan a CPU,
+    donde tardan más que el límite del hook y no inyectan nada."""
+    port = PORTS[scenario]
+    env = {**os.environ, **extra, "CLAUDE_DECIDE_PORT": str(port)}
+    log = open(CACHE / f"daemon-{scenario}.log", "a")
+    proc = subprocess.Popen([PYTHON, str(ROOT / "daemon.py")], cwd=ROOT, env=env, stdout=log, stderr=log)
+    for _ in range(180):
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2)
+            break
+        except OSError:
+            time.sleep(1)
+    else:
+        raise SystemExit(f"el daemon de {scenario} no arrancó: mira {CACHE}/daemon-{scenario}.log")
+    # La primera petición arma el catálogo y calienta la GPU: si la hiciera el hook, pasaría de su límite.
+    warm = json.dumps({"event": "UserPromptSubmit", "prompt": "hola", "cwd": str(HERE / "project")}).encode()
+    urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/score", warm), timeout=120).read()
+    return proc
 
 
 def workspace(saturated, scenario, condition, task):
@@ -211,19 +214,23 @@ def main():
     jobs = [(s, c, t, rep) for rep in range(reps) for t in tasks for s in PORTS for c in ("sin", "con")
             if (s, c, t["id"], rep) not in done]
     print(f"{len(jobs)} ejecuciones pendientes", flush=True)
-    procs = start_daemons(daemon_env)
-    try:
-        with ThreadPoolExecutor(PARALLEL) as pool, RESULTS.open("a") as out:
-            futures = [pool.submit(run_one, saturated, conditions, *job) for job in jobs]
-            for future in futures:
-                row = future.result()
-                out.write(json.dumps(row) + "\n")
-                out.flush()
-                print(f"{row['scenario']:8} {row['condition']} {row['task']:15} #{row['rep']} "
-                      f"{'ok ' if row['passed'] else 'MAL'} {row['cost'] or 0:.3f} US$ {row['turns']} turnos", flush=True)
-    finally:
-        for p in procs:
-            p.terminate()
+    for scenario in PORTS:
+        todo = [job for job in jobs if job[0] == scenario]
+        if not todo:
+            continue
+        daemon = start_daemon(scenario, daemon_env[scenario])
+        try:
+            with ThreadPoolExecutor(PARALLEL) as pool, RESULTS.open("a") as out:
+                futures = [pool.submit(run_one, saturated, conditions, *job) for job in todo]
+                for future in futures:
+                    row = future.result()
+                    out.write(json.dumps(row) + "\n")
+                    out.flush()
+                    print(f"{row['scenario']:8} {row['condition']} {row['task']:15} #{row['rep']} "
+                          f"{'ok ' if row['passed'] else 'MAL'} {row['cost'] or 0:.3f} US$ {row['turns']} turnos", flush=True)
+        finally:
+            daemon.terminate()
+            daemon.wait()
     report()
 
 
