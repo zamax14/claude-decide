@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ledger"
+version = "0.3.0"
+description = "Personal expense tracker: a small CLI over SQLite"
+requires-python = ">=3.10"
+
+[project.scripts]
+ledger = "ledger.cli:main"

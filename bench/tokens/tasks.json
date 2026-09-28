@@ -1,0 +1,13 @@
+[
+ {"id": "ok", "prompt": "responde solo: ok", "check": "True"},
+ {"id": "bug-december", "prompt": "`ledger list --month 2026-12` revienta con un ValueError. Arréglalo y añade un test que lo cubra.", "check": "from ledger import db; assert db.month_range('2026-12') == ('2026-12-01', '2027-01-01'); tests()"},
+ {"id": "delete-command", "prompt": "Añade un comando `ledger delete <id>` que borre un gasto, con su test.", "check": "cli('add', '3', 'food', 'x'); cli('delete', '1'); assert 'x' not in cli('list'); tests()"},
+ {"id": "report-style", "prompt": "El reporte HTML se ve horrible. Dale estilos: tabla con bordes, montos alineados a la derecha y un encabezado con el total del mes.", "check": "from ledger import report; from ledger.models import Expense; h = report.html('2026-09', [Expense(3, 'food')], {'food': 3}); assert '<style' in h and 'right' in h; tests()"},
+ {"id": "commit", "setup": "printf '\\n## Categories\\n\\nfood, transport, home, health, leisure, other.\\n' >> README.md", "prompt": "Haz commit de los cambios pendientes.", "check": "import subprocess; assert subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True).stdout == ''; assert subprocess.run(['git', 'rev-list', '--count', 'HEAD'], capture_output=True, text=True).stdout.strip() == '2'"},
+ {"id": "readme-es", "prompt": "Traduce el README al español manteniendo los ejemplos de comandos tal cual.", "check": "t = open('README.md').read().lower(); assert 'gastos' in t and 'python -m ledger add' in t"},
+ {"id": "ci-matrix", "prompt": "Haz que el CI pruebe con Python 3.10, 3.11 y 3.12.", "check": "c = open('.github/workflows/ci.yml').read(); assert 'matrix' in c and '3.10' in c and '3.11' in c"},
+ {"id": "sql-index", "prompt": "Con un millón de gastos, `ledger list --month` y `summary` van lentísimos. Optimízalo.", "check": "assert 'INDEX' in open('ledger/db.py').read().upper(); tests()"},
+ {"id": "refactor-cli", "prompt": "Refactor cli.main: one function per subcommand instead of the if/elif chain. Keep the behaviour.", "check": "assert 'elif args.cmd' not in open('ledger/cli.py').read(); tests()"},
+ {"id": "sqlite-money", "prompt": "¿Qué diferencia hay entre REAL y NUMERIC en SQLite para guardar dinero? Respuesta corta, sin tocar el código.", "check": "True"},
+ {"id": "greeting", "prompt": "hola! antes de empezar, ¿qué puedo hacer con este repo?", "check": "True"}
+]
