@@ -107,6 +107,28 @@ precisión no pasa de ~0,15. Por eso sigue mandando el top 5 con umbral 0,5.
 - **No sabe decir «nada»**: a «hola» le da ≥0,9 a alguna skill, así que ningún umbral separa una
   petición que no necesita nada de una que sí, y siempre inyecta algo.
 
+### Laya entrenada para esta tarea (`laya-context_prefilter`)
+
+Afinada con [Laya-Finetune](https://github.com/zamax14/Laya-Finetune) sobre 46.763 pares petición–elemento: 9.000
+peticiones escritas por qwen3.6:35b para 2.276 skills, agentes, rules y tools MCP de repos públicos y sintéticos, con
+negativos cercanos y al azar, y dos jueces (gemma4:31b y qwen3.5:122b). Lee el estado `{"request", "step"}` y la
+misma pregunta en inglés, y no usa prior. Mismos 49 elementos y 39 peticiones:
+
+| Modelo | hit@1 | hit@3 | recall@5 | MRR | media de la máxima en negativas | ms (GPU) |
+|---|---|---|---|---|---|---|
+| laya-mesa-de-ayuda-v4, con prior | 0,36 | 0,53 | 0,57 | 0,51 | 0,58 | ~205 |
+| **laya-context_prefilter (1k)** | **0,86** | **1,00** | **0,94** | **0,93** | **0,06** | ~240 |
+| laya-context_prefilter (8k) | 0,72 | 0,97 | 0,96 | 0,84 | 0,10 | ~240 |
+
+- **El umbral por fin sirve**: con 0,5 ninguna petición negativa recibe nada, se eligen 2,4 elementos por
+  petición de media, con recall 0,82 y precisión 0,45 (v4 no pasaba de ~0,15).
+- **Generaliza a catálogos que no vio**: en 3.120 pares de fuentes reservadas (otros repos y servidores MCP),
+  acierta el 90 % (Laya base, 41 %), con Brier 0,078.
+- **El formato del estado importa**: con la petición como texto suelto baja a hit@3 0,89 y 0,25 en negativas.
+- **El prior sobra**: con él, las negativas suben a 0,57; `scorer.calibrate` lo omite para este modelo.
+- **En CPU es lento**: ~4,6 s por petición con 49 elementos (una secuencia por pregunta); en GPU, ~240 ms.
+- El de 8k solo compensa si se le pasa más contexto que la petición; en peticiones cortas es peor.
+
 ### Contexto (`claude -p --output-format json`, «responde solo: ok»)
 
 | | Tokens de entrada |
@@ -129,7 +151,9 @@ al 10 % del contexto fijo, y ese contexto ya se cobra casi siempre como lectura 
 ## Cambiar de modelo
 
 Un checkpoint de Laya afinado se usa tal cual: `CLAUDE_DECIDE_MODEL=/ruta/al/checkpoint` (la carpeta con
-`rl_agent_config.json`, el formato de `laya.load`). Cada modelo calibra su propio prior la primera vez.
+`rl_agent_config.json`, el formato de `laya.load`). Cada modelo calibra su propio prior la primera vez, salvo
+uno entrenado con la tarea `context_prefilter` de Laya-Finetune (`model_name: laya-context_prefilter` en su
+`rl_agent_config.json`): ese recibe el estado `{"request", "step"}` y se usa sin prior.
 
 Cualquier otro objeto con `name` y `predict(state, questions)` que devuelva respuestas con forma de Laya
 (`{"answers": {id: {"noul": p}}}`) sirve. Se añade a `MODELS` en `model.py`, se elige con
