@@ -149,8 +149,10 @@ def workspace(saturated, scenario, condition, task):
         shutil.copytree(saturated / "agents", work / ".claude" / "agents")
         if condition == "sin":  # Con plugin, las rules viven en la librería y entran solo si se eligen.
             shutil.copytree(saturated / "rules", work / ".claude" / "rules")
-    git = ["git", "-c", "user.name=bench", "-c", "user.email=bench@example.com"]
+    git = ["git"]
     subprocess.run(["git", "init", "-q"], cwd=work, check=True)
+    for key, value in (("user.name", "bench"), ("user.email", "bench@example.com")):  # Por si no hay identidad global.
+        subprocess.run(["git", "config", key, value], cwd=work, check=True)
     (work / ".git" / "info" / "exclude").write_text(".claude/\n")
     subprocess.run(git + ["add", "-A"], cwd=work, check=True)
     subprocess.run(git + ["commit", "-qm", "initial"], cwd=work, check=True)
