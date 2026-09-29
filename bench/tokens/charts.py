@@ -98,8 +98,44 @@ def per_task(groups):
     fig.savefig(OUT / f"tasks{TAG}.png", dpi=160)
 
 
+NAMES = {"claude-haiku-4-5-20251001": "Haiku 4.5", "claude-sonnet-5-5": "Sonnet 5.5", "claude-opus-5-5": "Opus 5.5"}
+
+
+def models():
+    """Every model side by side: tokens per task, per turn and cost per task, without and with, on the real tasks.
+    Each model with the one claude-decide version it ran (a model with several is skipped: pick one with charts)."""
+    rows = [json.loads(line) for line in (HERE / "results.jsonl").read_text().splitlines()]
+    order = [m for m in NAMES if len({r["decide"] for r in rows if r["model"] == m}) == 1]
+    if not order:
+        return
+    work = lambda m, c: [r for r in rows if r["model"] == m and r["condition"] == c and r["task"] != "ok"]
+    decide = {m: next(r["decide"] for r in rows if r["model"] == m).rsplit("@", 1)[-1] for m in order}
+    panels = (("Tokens per task", lambda rs: mean(map(total, rs)) / 1000, "{:.0f}k", "thousand tokens"),
+              ("Tokens per turn", lambda rs: mean(total(r) / (r["turns"] or 1) for r in rs) / 1000, "{:.1f}k",
+               "thousand tokens"),
+              ("Cost per task", lambda rs: mean(r["cost"] or 0 for r in rs), "${:.3f}", "US$ at API prices"))
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4.2))
+    x = range(len(order))
+    for ax, (title, measure, fmt, unit) in zip(axes, panels):
+        sin = [measure(work(m, "sin")) for m in order]
+        con = [measure(work(m, "con")) for m in order]
+        ax.bar([i - .2 for i in x], sin, .4, color=SIN, edgecolor="white", linewidth=2, label=WITHOUT)
+        ax.bar([i + .2 for i in x], con, .4, color=CON, edgecolor="white", linewidth=2, label=WITH)
+        for i, (a, b) in enumerate(zip(sin, con)):
+            ax.text(i - .2, a, fmt.format(a), ha="center", va="bottom", fontsize=7)
+            ax.text(i + .2, b, f"{(b - a) / a:+.0%}", ha="center", va="bottom", fontsize=9, fontweight="bold")
+        ax.set_xticks(list(x), [f"{NAMES[m]}\nclaude-decide {decide[m]}" for m in order], fontsize=8)
+        ax.set_ylim(0, max(sin + con) * 1.18)
+        style(ax, title, unit)
+    axes[0].legend(frameon=False, fontsize=8, loc="upper left")
+    fig.suptitle(f"Real tasks, 3 runs each · project with {ENV}", fontsize=10)
+    fig.tight_layout()
+    fig.savefig(OUT / "models.png", dpi=160)
+
+
 def main():
     OUT.mkdir(exist_ok=True)
+    models()
     groups = load()
     summary(groups)
     per_task(groups)
