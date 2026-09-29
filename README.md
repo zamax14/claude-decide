@@ -129,6 +129,28 @@ misma pregunta en inglés, y no usa prior. Mismos 49 elementos y 39 peticiones:
 - **En CPU es lento**: ~4,6 s por petición con 49 elementos (una secuencia por pregunta); en GPU, ~240 ms.
 - El de 8k solo compensa si se le pasa más contexto que la petición; en peticiones cortas es peor.
 
+### Tokens en tareas reales (`bench/tokens/`)
+
+Un proyecto de ejemplo (`ledger`, una CLI de gastos sobre SQLite con tests, Dockerfile y CI) con lo que tendría
+alguien que instaló un par de colecciones: 25 skills, 10 agentes y 5 rules públicas (MIT/CC0), la mitad del stack del
+proyecto. 10 tareas con su comprobación automática (un bug, un comando, estilos, commit, traducción, CI, índice SQL,
+refactor, una pregunta y un saludo) más «ok», 3 veces cada una, sin y con claude-decide (`laya-context_prefilter` 1k),
+con Haiku 4.5 y como mucho 15 turnos. Nada de la configuración del usuario entra (`--setting-sources project,local`).
+
+| claude-decide | Tokens por tarea | Tokens por turno | Contexto de un mensaje | Coste por tarea | Resueltas |
+|---|---|---|---|---|---|
+| sin | 206.428 | 24.771 | 24.751 | 0,061 US$ | 22/30 |
+| **con** | **177.027 (−14 %)** | **20.583 (−17 %)** | **20.377 (−18 %)** | **0,050 US$ (−18 %)** | **24/30** |
+
+![Contexto de un mensaje y tokens por turno](bench/tokens/charts/resumen.png)
+![Tokens por tarea](bench/tokens/charts/tareas.png)
+
+- Cada mensaje llega con ~4.400 tokens menos, y el ahorro se mantiene en todos los turnos: 9 de las 10 tareas gastan
+  entre un 9 y un 24 % menos (el saludo, +6 %, es ruido de un turno de más).
+- No empeora el resultado: 24 de 30 resueltas con claude-decide y 22 sin él. Las que fallan en las dos condiciones son
+  tareas que a Haiku no le caben en 15 turnos (el índice SQL, `delete` y el bug de diciembre).
+- Reproducir: `CLAUDE_DECIDE_MODEL=<checkpoint> python bench/tokens/run.py` y `python3 bench/tokens/charts.py`.
+
 ### Contexto (`claude -p --output-format json`, «responde solo: ok»)
 
 | | Tokens de entrada |
