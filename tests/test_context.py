@@ -21,7 +21,9 @@ class KeywordModel:
 
 class ContextTest(unittest.TestCase):
     def setUp(self):
-        tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        folder = tempfile.TemporaryDirectory()  # enterContext() pide Python 3.11 y el plugin admite 3.10.
+        self.addCleanup(folder.cleanup)
+        tmp = Path(folder.name)
         self.home, self.data = tmp / "claude", tmp / "data"
         skill = self.home / "skills" / "docs"
         skill.mkdir(parents=True)
