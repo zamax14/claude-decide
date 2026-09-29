@@ -1,4 +1,4 @@
-"""Gráficas de results.jsonl en bench/tokens/charts/: contexto fijo, tokens por turno y tokens por tarea.
+"""Gráficas (en inglés, para el README) de results.jsonl en bench/tokens/charts/: contexto fijo, tokens por turno y por tarea.
 
     python3 bench/tokens/charts.py      # necesita matplotlib; BENCH_MODEL elige el modelo (Haiku por defecto)
 """
@@ -16,8 +16,9 @@ import matplotlib.pyplot as plt  # noqa: E402
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "charts"
 MODEL = os.environ.get("BENCH_MODEL", "claude-haiku-4-5-20251001")
-SIN, CON = "#9aa5b1", "#2f7ed8"
-ENV = "25 skills, 10 agentes y 5 rules"
+SIN, CON = "#eb6834", "#2a78d6"  # Paleta validada (dataviz): naranja sin, azul con.
+ENV = "25 skills, 10 agents and 5 rules"
+WITHOUT, WITH = "without claude-decide", "with claude-decide"
 
 
 def total(r):
@@ -45,21 +46,21 @@ def summary(groups):
                 for c in ("sin", "con")}
     fixed = {c: [total(r) for r in groups.get(("ok", c), [])] for c in ("sin", "con")}
     fig, axes = plt.subplots(1, 2, figsize=(10, 4.2))
-    for ax, values, title in ((axes[0], fixed, "Contexto de un mensaje («responde solo: ok»)"),
-                              (axes[1], per_turn, "Tokens por turno, tareas reales")):
+    for ax, values, title in ((axes[0], fixed, "Context of one message"),
+                              (axes[1], per_turn, "Tokens per turn, real tasks")):
         if not (values["sin"] and values["con"]):
             ax.set_visible(False)
             continue
         a, b = mean(values["sin"]), mean(values["con"])
-        ax.bar([0, 1], [a, b], .6, color=[SIN, CON])
+        ax.bar([0, 1], [a, b], .6, color=[SIN, CON], edgecolor="white", linewidth=2)
         ax.text(0, a, f"{a / 1000:.1f}k", ha="center", va="bottom")
         ax.text(1, b, f"{b / 1000:.1f}k ({(b - a) / a:+.0%})", ha="center", va="bottom", fontweight="bold")
-        ax.set_xticks([0, 1], ["sin claude-decide", "con claude-decide"])
+        ax.set_xticks([0, 1], [WITHOUT, WITH])
         ax.set_ylim(0, max(a, b) * 1.2)
-        style(ax, title, "tokens (entrada + caché + salida)")
-    fig.suptitle(f"{MODEL} · proyecto con {ENV}", fontsize=10)
+        style(ax, title, "tokens (input + cache + output)")
+    fig.suptitle(f"{MODEL} · project with {ENV}", fontsize=10)
     fig.tight_layout()
-    fig.savefig(OUT / "resumen.png", dpi=160)
+    fig.savefig(OUT / "summary.png", dpi=160)
 
 
 def per_task(groups):
@@ -73,19 +74,19 @@ def per_task(groups):
               f"{sum(r['passed'] for r in groups[(t, 'con')])}/{len(groups[(t, 'con')])}" for t in tasks]
     fig, ax = plt.subplots(figsize=(10, 4.8))
     x = range(len(tasks))
-    ax.bar([i - .2 for i in x], sin, .4, color=SIN, label="sin claude-decide")
-    ax.bar([i + .2 for i in x], con, .4, color=CON, label="con claude-decide")
+    ax.bar([i - .2 for i in x], sin, .4, color=SIN, edgecolor="white", linewidth=2, label=WITHOUT)
+    ax.bar([i + .2 for i in x], con, .4, color=CON, edgecolor="white", linewidth=2, label=WITH)
     for i, (a, b) in enumerate(zip(sin, con)):
         ax.text(i + .2, b, f"{(b - a) / a:+.0%}", ha="center", va="bottom", fontsize=8)
-    ax.set_xticks(list(x), [f"{t}\n~{n:.0f} turnos\n{p}" for t, n, p in zip(tasks, turns, passed)], fontsize=7)
+    ax.set_xticks(list(x), [f"{t}\n~{n:.0f} turns\n{p}" for t, n, p in zip(tasks, turns, passed)], fontsize=7)
     ns = [len(groups[(t, c)]) for t in tasks for c in ("sin", "con")]
     runs = f"{min(ns)}" if min(ns) == max(ns) else f"{min(ns)}–{max(ns)}"
-    style(ax, f"Tokens por tarea (media de {runs} ejecuciones; debajo, resueltas sin · con)",
-          "miles de tokens (entrada + caché + salida)")
+    style(ax, f"Tokens per task (mean of {runs} runs; below, solved without · with)",
+          "thousand tokens (input + cache + output)")
     ax.legend(frameon=False)
-    fig.suptitle(f"{MODEL} · proyecto con {ENV}", fontsize=10)
+    fig.suptitle(f"{MODEL} · project with {ENV}", fontsize=10)
     fig.tight_layout()
-    fig.savefig(OUT / "tareas.png", dpi=160)
+    fig.savefig(OUT / "tasks.png", dpi=160)
 
 
 def main():
