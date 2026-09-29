@@ -69,7 +69,7 @@ agents and MCP tools. Three of the requests should trigger nothing ("hi", genera
 
 | Model | hit@1 | hit@3 | recall@5 | MRR | Top score on "needs nothing" | Items at 0.5 | Precision | Recall |
 |---|---|---|---|---|---|---|---|---|
-| Laya multilingual (base, with prior) | 0.33 | 0.50 | 0.50 | 0.46 | 0.91 | — | — | — |
+| Laya multilingual (base, with prior) | 0.33 | 0.50 | 0.50 | 0.46 | 0.91 | — | <0.15 | — |
 | Laya fine-tuned for helpdesk tickets (with prior) | 0.36 | 0.53 | 0.57 | 0.51 | 0.58 | — | <0.15 | — |
 | laya-context-prefilter v1 (no prior) | 0.86 | **1.00** | 0.94 | 0.93 | **0.06** | 2.8 | 0.41 | 0.82 |
 | **[laya-context-prefilter](https://huggingface.co/Zamax14/laya-context-prefilter) v2 (no prior)** | **0.92** | 0.97 | **0.97** | **0.95** | 0.10 | **2.5** | **0.48** | **0.86** |
