@@ -10,7 +10,8 @@ Un entorno normal: el proyecto con lo que instalaría alguien que añadió un pa
 nombre» y las rules a la librería, como haría `library.py apply` y `manage`, y el hook le devuelve lo elegido.
 
 Cada ejecución es un `claude -p` sobre una copia limpia de `project/`, con un daemon propio en otro puerto con
-el modelo de CLAUDE_DECIDE_MODEL. Después, la comprobación de la tarea dice si quedó resuelta.
+el modelo de CLAUDE_DECIDE_MODEL. Después, la comprobación de la tarea dice si quedó resuelta. Cada resultado guarda
+los dos modelos (el de Claude y el de claude-decide): las tablas y gráficas nunca mezclan versiones.
 """
 import json
 import os
@@ -31,6 +32,7 @@ CACHE = HERE / ".cache"
 RESULTS = HERE / "results.jsonl"
 TASKS = json.loads((HERE / "tasks.json").read_text(encoding="utf-8"))
 MODEL = os.environ.get("BENCH_MODEL", "claude-haiku-4-5-20251001")
+DECIDE = os.environ.get("CLAUDE_DECIDE_MODEL", "prefilter")  # El que carga el daemon del bench.
 REPS, PARALLEL, MAX_TURNS, TIMEOUT = 3, 3, 15, 900
 PYTHON = os.environ.get("CLAUDE_DECIDE_PYTHON", sys.executable)  # Con laya y torch, para el daemon.
 PORT = 7719
@@ -172,7 +174,7 @@ def run_one(env, conds, condition, task, rep):
     shutil.rmtree(work, ignore_errors=True)
     if not usage:  # Sin respuesta del modelo (cuota agotada, red): no se apunta y se repite al retomar.
         return None
-    return {"model": MODEL, "condition": condition, "task": task["id"], "rep": rep,
+    return {"model": MODEL, "decide": DECIDE, "condition": condition, "task": task["id"], "rep": rep,
             "passed": check.returncode == 0 and not reply.get("is_error"),
             "cost": reply.get("total_cost_usd"), "turns": reply.get("num_turns"), "seconds": round(time.time() - start),
             "input": sum(m.get("inputTokens", 0) for m in usage.values()),
@@ -183,14 +185,14 @@ def run_one(env, conds, condition, task, rep):
 
 
 def rows():
-    return [r for r in map(json.loads, RESULTS.read_text().splitlines()) if r["model"] == MODEL] if RESULTS.exists() else []
+    return [r for r in map(json.loads, RESULTS.read_text().splitlines()) if (r["model"], r["decide"]) == (MODEL, DECIDE)] if RESULTS.exists() else []
 
 
 def report():
     done = rows()
     total = lambda r: r["input"] + r["cache_read"] + r["cache_write"] + r["output"]
     mean = lambda xs: sum(xs) / len(xs) if xs else float("nan")
-    print(f"{len(done)} ejecuciones, modelo {MODEL}\n")
+    print(f"{len(done)} ejecuciones, modelo {MODEL}, claude-decide con {DECIDE}\n")
     print("| claude-decide | Tokens por tarea | Tokens por turno | Contexto fijo («ok») | Coste por tarea | Resueltas |")
     print("|---|---|---|---|---|---|")
     for condition in ("sin", "con"):
@@ -211,7 +213,7 @@ def main():
     conds = conditions(env)
     done = {(r["condition"], r["task"], r["rep"]) for r in rows()}
     jobs = [(c, t, rep) for rep in range(reps) for t in tasks for c in ("sin", "con") if (c, t["id"], rep) not in done]
-    print(f"{len(jobs)} ejecuciones pendientes con {MODEL}", flush=True)
+    print(f"{len(jobs)} ejecuciones pendientes con {MODEL} y {DECIDE}", flush=True)
     if not jobs:
         return report()
     daemon = start_daemon()

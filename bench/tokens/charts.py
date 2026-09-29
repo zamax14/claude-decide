@@ -18,6 +18,7 @@ OUT = HERE / "charts"
 DEFAULT = "claude-haiku-4-5-20251001"  # Las gráficas del README; otro modelo lleva su nombre en el archivo.
 MODEL = os.environ.get("BENCH_MODEL", DEFAULT)
 TAG = "" if MODEL == DEFAULT else "-" + MODEL.removeprefix("claude-")
+DECIDE = None  # Lo fija load().
 SIN, CON = "#eb6834", "#2a78d6"  # Paleta validada (dataviz): naranja sin, azul con.
 ENV = "25 skills, 10 agents and 5 rules"
 WITHOUT, WITH = "without claude-decide", "with claude-decide"
@@ -28,10 +29,16 @@ def total(r):
 
 
 def load():
+    """Los resultados de MODEL con un solo modelo de claude-decide: CLAUDE_DECIDE_MODEL, o el único que haya."""
+    global DECIDE
+    rows = [r for r in map(json.loads, (HERE / "results.jsonl").read_text().splitlines()) if r["model"] == MODEL]
+    decides = sorted({r["decide"] for r in rows})
+    DECIDE = os.environ.get("CLAUDE_DECIDE_MODEL", decides[0] if len(decides) == 1 else None)
+    if DECIDE not in decides:
+        raise SystemExit(f"{MODEL} tiene resultados con {decides}: elige uno con CLAUDE_DECIDE_MODEL")
     groups = defaultdict(list)
-    for line in (HERE / "results.jsonl").read_text().splitlines():
-        r = json.loads(line)
-        if r["model"] == MODEL:
+    for r in rows:
+        if r["decide"] == DECIDE:
             groups[(r["task"], r["condition"])].append(r)
     return groups
 
@@ -60,7 +67,7 @@ def summary(groups):
         ax.set_xticks([0, 1], [WITHOUT, WITH])
         ax.set_ylim(0, max(a, b) * 1.2)
         style(ax, title, "tokens (input + cache + output)")
-    fig.suptitle(f"{MODEL} · project with {ENV}", fontsize=10)
+    fig.suptitle(f"{MODEL} · claude-decide model {DECIDE.split('/')[-1]} · project with {ENV}", fontsize=10)
     fig.tight_layout()
     fig.savefig(OUT / f"summary{TAG}.png", dpi=160)
 
@@ -86,7 +93,7 @@ def per_task(groups):
     style(ax, f"Tokens per task (mean of {runs} runs; below, solved without · with)",
           "thousand tokens (input + cache + output)")
     ax.legend(frameon=False)
-    fig.suptitle(f"{MODEL} · project with {ENV}", fontsize=10)
+    fig.suptitle(f"{MODEL} · claude-decide model {DECIDE.split('/')[-1]} · project with {ENV}", fontsize=10)
     fig.tight_layout()
     fig.savefig(OUT / f"tasks{TAG}.png", dpi=160)
 
