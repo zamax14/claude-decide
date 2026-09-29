@@ -38,6 +38,7 @@ someone with a couple of collections installed would have: **25 skills, 10 agent
 The tasks: 10 real ones (a bug, a new command, report styling, a commit, a translation, CI, an SQL index, a refactor,
 a question and a greeting), plus one single-turn message. Each runs 3 times without and with claude-decide, on
 Claude Sonnet 5.5 and on Claude Haiku 4.5, with at most 15 turns and nothing from the user's own configuration.
+These runs used v1 of the model.
 
 | Model | claude-decide | Tokens per task | Tokens per turn | Context of one message | Cost per task | Tasks solved |
 |---|---|---|---|---|---|---|
@@ -54,7 +55,8 @@ Claude Sonnet 5.5 and on Claude Haiku 4.5, with at most 15 turns and nothing fro
   tokens ([chart](bench/tokens/charts/tasks.png)). The greeting's +6% is one extra turn.
 - **No loss in quality**: the same 28 of 30 tasks solved with and without the plugin on Sonnet, 24 against 22 on
   Haiku. On Sonnet the failures are the translation, which Sonnet sometimes writes to a new `README.es.md` while the
-  check reads `README.md`, under both conditions; on Haiku they are tasks that don't fit in 15 turns.
+  check reads `README.md`, under both conditions (the task now says to translate it in place); on Haiku they are
+  tasks that don't fit in 15 turns.
 - **The saving grows with the catalog.** With 100 skills, 50 agents and 15 rules, one message drops from 63k to
   33k tokens (−48%).
 
@@ -65,16 +67,18 @@ Reproduce it with [`bench/tokens/`](bench/tokens).
 The ranking benchmark has 39 requests with hand-labelled answers, run against a real catalog of 49 skills, rules,
 agents and MCP tools. Three of the requests should trigger nothing ("hi", general questions).
 
-| Model | hit@1 | hit@3 | recall@5 | MRR | Top score on "needs nothing" |
-|---|---|---|---|---|---|
-| Laya multilingual (base, with prior) | 0.33 | 0.50 | 0.50 | 0.46 | 0.91 |
-| Laya fine-tuned for helpdesk tickets (with prior) | 0.36 | 0.53 | 0.57 | 0.51 | 0.58 |
-| **[laya-context-prefilter](https://huggingface.co/Zamax14/laya-context-prefilter) (no prior)** | **0.86** | **1.00** | **0.94** | **0.93** | **0.06** |
+| Model | hit@1 | hit@3 | recall@5 | MRR | Top score on "needs nothing" | Items at 0.5 | Precision | Recall |
+|---|---|---|---|---|---|---|---|---|
+| Laya multilingual (base, with prior) | 0.33 | 0.50 | 0.50 | 0.46 | 0.91 | — | — | — |
+| Laya fine-tuned for helpdesk tickets (with prior) | 0.36 | 0.53 | 0.57 | 0.51 | 0.58 | — | <0.15 | — |
+| laya-context-prefilter v1 (no prior) | 0.86 | **1.00** | 0.94 | 0.93 | **0.06** | 2.8 | 0.41 | 0.82 |
+| **[laya-context-prefilter](https://huggingface.co/Zamax14/laya-context-prefilter) v2 (no prior)** | **0.92** | 0.97 | **0.97** | **0.95** | 0.10 | **2.5** | **0.48** | **0.86** |
 
-- **A threshold that works**: at 0.5, a request that needs nothing gets nothing. The others get 2.4 items on
-  average, with recall 0.82 and precision 0.45. The earlier models never got past 0.15 precision.
+- **A threshold that works**: at 0.5, a request that needs nothing gets nothing. The others get 2.5 items on
+  average with v2, fewer and more of them right than with v1. The earlier models never got past 0.15 precision.
 - **It generalizes to catalogs it never saw**: on 3,120 pairs from held-out repositories and MCP servers it is right
-  90% of the time, against 41% for the base model, with a Brier score of 0.078.
+  90% of the time, against 41% for the base model, with a Brier score of 0.074. With the request and the
+  descriptions translated to Spanish it is right 89.9% of the time, with a Brier score of 0.076.
 
 ## How it works
 
@@ -179,15 +183,18 @@ Every decision is logged to `~/.claude-decide/logs/decisions.jsonl`, with the re
 [Laya multilingual](https://github.com/NandhaKishorM/laya), an open 322M-parameter System One model (mmBERT), fine-tuned
 with [Laya-Finetune](https://github.com/zamax14/Laya-Finetune).
 
-- **Catalog**: 2,276 skills, agents, rules and MCP tools from public repositories and MCP servers, plus synthetic
+- **Catalog**: 3,351 skills, agents, rules and MCP tools from public repositories and MCP servers, plus synthetic
   ones.
-- **Requests**: 9,000, in English, Spanish and Portuguese, written by an LLM for items drawn from that catalog, with
+- **Requests**: 15,000, in English, Spanish and Portuguese, written by an LLM for items drawn from that catalog, with
   and without a tool step.
-- **Negatives**: each request is paired with the most similar items (hard negatives) and with random ones.
+- **Negatives**: each request is paired with the 5 most similar items (hard negatives) and with 5 random ones.
 - **Judges**: two LLM judges of different families checked every labelled pair and relabelled the ones they agreed
   were wrong.
-- **Training set**: 46,763 pairs, trained at 1k tokens of context.
+- **Spanish**: every description and every request not in Spanish was translated, and each pair got a Spanish copy
+  with the same label, so catalogs and requests in Spanish work as well as in English.
+- **Training set**: 202,532 pairs (104k English, 98k Spanish), trained at 1k tokens of context.
 - **Held out**: about 15% of the sources were never trained on, and that is where the 90% comes from.
+- **Versions**: `main` is v2; the first version stays on the Hub as `Zamax14/laya-context-prefilter@v1`.
 
 Any other model works if it has `name` and `predict(state, questions)` and returns Laya-shaped answers
 (`{"answers": {id: {"noul": p}}}`). Add it to `MODELS` in `model.py` and compare it with `python bench/run.py`. To
@@ -202,7 +209,7 @@ retrain on your own catalog, use the `context_prefilter` task of Laya-Finetune. 
 - **Plugins**: only their `skills/` and `agents/` folders are read; MCP servers bundled in plugins aren't.
 - **Out of reach**: claude.ai connectors and the Chrome extension can't be listed locally.
 - **Project `.mcp.json`**: it is scored even if you haven't approved it in Claude Code.
-- **Recall isn't perfect**: at 0.82, about one relevant item in five is missed. A missed skill is still listed by
+- **Recall isn't perfect**: at 0.86, about one relevant item in seven is missed. A missed skill is still listed by
   name, so Claude can invoke it on its own; a missed rule isn't.
 
 ## Development
