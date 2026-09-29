@@ -7,6 +7,7 @@
 A Claude Code plugin with a small local decision model that picks, for every request and every tool step, which
 skills, rules, agents and MCP tools Claude actually needs, and hands it only those.
 
+[![Tests](https://github.com/zamax14/claude-decide/actions/workflows/tests.yml/badge.svg)](https://github.com/zamax14/claude-decide/actions/workflows/tests.yml)
 [![License MIT](https://img.shields.io/badge/license-MIT-2fbf94)](LICENSE)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-d97757)](https://code.claude.com/docs/en/plugins)
 [![Model on Hugging Face](https://img.shields.io/badge/model-laya--context--prefilter-ffc53d?logo=huggingface&logoColor=black)](https://huggingface.co/Zamax14/laya-context-prefilter)
