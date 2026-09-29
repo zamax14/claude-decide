@@ -47,7 +47,7 @@ class ContextTest(unittest.TestCase):
         self.assertIn("`docs` (", text)
         self.assertIn("Fetches library docs, in full.", text)  # Descripción de una skill en «solo nombre».
         self.assertIn("Commits en una línea.", text)  # Cuerpo de una rule de la librería.
-        self.assertIn("siguen disponibles por su nombre", text)
+        self.assertIn("still available by name", text)
 
     def test_mcp_tools_come_with_the_toolsearch_hint(self):
         text = self.decide(event="UserPromptSubmit", prompt="busca en el graph")["context"]

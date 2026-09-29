@@ -39,10 +39,10 @@ def line(item, score):
         return f"{head}: {' '.join(fields.get('description', item['descripcion']).split())}"
     if item["gestion"] == "library":
         _, body = catalog.frontmatter(Path(item["ruta"]).read_text(encoding="utf-8", errors="replace"))
-        return f"{head}, rule que debes seguir:\n{body.strip()[:MAX_RULE]}"
+        return f"{head}, a rule to follow:\n{body.strip()[:MAX_RULE]}"
     if item["tipo"] == "mcp":
         text = item["descripcion"] if len(item["descripcion"]) <= 200 else item["descripcion"][:200].rsplit(" ", 1)[0] + "…"
-        return f"{head}: {text} Cárgala con ToolSearch `select:{item['nombre']}`."
+        return f"{head}: {text} Load it with ToolSearch `select:{item['nombre']}`."
     return head
 
 
@@ -58,9 +58,9 @@ def context(chosen, items, step=None):
     if not chosen:
         return ""
     by_id = {i["id"]: i for i in items}
-    intro = (f"claude-decide: para el paso en curso ({step}) también encaja:" if step else
-             "claude-decide puntuó skills, rules, agentes y tools MCP para esta petición. Lo que más encaja:")
-    outro = ("\nLas demás skills siguen disponibles por su nombre."
+    intro = (f"claude-decide: for the current step ({step}) these also fit:" if step else
+             "claude-decide scored skills, rules, agents and MCP tools for this request. The best fits:")
+    outro = ("\nThe other skills are still available by name."
              if any(i["gestion"] == "name-only" for i in items) and not step else "")
     return "\n".join([intro, *(line(by_id[r["id"]], r["score"]) for r in chosen)]) + outro
 
@@ -151,7 +151,7 @@ def main():
     decider = Decider(model, scorer.load_prior(catalog.DATA / "prior.json"))
     # Solo en local: el prompt del usuario no debe salir de la máquina.
     server = HTTPServer(("127.0.0.1", PORT), handler(decider))
-    print(f"claude-decide: {model.name} escuchando en 127.0.0.1:{PORT}", flush=True)
+    print(f"claude-decide: {model.name} listening on 127.0.0.1:{PORT}", flush=True)
     server.serve_forever()
 
 

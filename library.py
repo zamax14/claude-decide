@@ -1,15 +1,15 @@
-"""Recorta el contexto de Claude Code y lo deja como estaba.
+"""Trims Claude Code's context and puts it back as it was.
 
-    python library.py apply            # tus skills pasan a «solo nombre» en ~/.claude/settings.json
-    python library.py restore          # deshace todo lo que hizo esta herramienta
-    python library.py manage rule:x    # saca una rule de ~/.claude/rules (entra solo si se elige)
-    python library.py unmanage rule:x  # la devuelve; también vale skill:x
+    python library.py apply            # your skills go to "name only" in ~/.claude/settings.json
+    python library.py restore          # undoes everything this tool did
+    python library.py manage rule:x    # moves a rule out of ~/.claude/rules (injected only when picked)
+    python library.py unmanage rule:x  # brings it back; skill:x works too
     python library.py status
 
-Las skills se colapsan con `skillOverrides: "name-only"`: Claude sigue viendo el nombre y puede
-usarlas, y el hook le devuelve la descripción de las que elige el modelo. Claude Code no aplica
-`skillOverrides` a las skills de plugins, así que esas no se tocan. Las rules no tienen modo «solo
-nombre»: se mueven a ~/.claude/library/rules. Todo lo hecho queda en state.json para deshacerlo.
+Skills are collapsed with `skillOverrides: "name-only"`: Claude still sees the name and can use
+them, and the hook gives back the description of the ones the model picks. Claude Code doesn't
+apply `skillOverrides` to plugin skills, so those are left alone. Rules have no "name only" mode:
+they move to ~/.claude/library/rules. Everything done is kept in state.json to undo it.
 """
 import json
 import shutil
@@ -130,20 +130,20 @@ def main(argv):
     library = Library()
     command, *args = argv or ["status"]
     if command in ("apply", "manage") and not library.plugin_enabled() and "--force" not in args:
-        sys.exit("El plugin claude-decide no está activo en ~/.claude/settings.json: sin su hook, Claude se "
-                 "quedaría sin descripciones en todas las sesiones. Instálalo antes (o usa --force).")
+        sys.exit("The claude-decide plugin isn't enabled in ~/.claude/settings.json: without its hook, Claude would "
+                 "lose the descriptions in every session. Install it first (or use --force).")
     args = [a for a in args if a != "--force"]
     if command == "apply":
-        print("Solo nombre:", ", ".join(library.collapse(library.own_skills())) or "nada nuevo")
+        print("Name only:", ", ".join(library.collapse(library.own_skills())) or "nothing new")
     elif command == "restore":
         library.restore()
-        print("Restaurado.")
+        print("Restored.")
     elif command in ("manage", "unmanage"):
         for item_id in args:
             getattr(library, command)(item_id)
     elif command != "status":
         sys.exit(__doc__)
-    print(f"skills solo nombre: {sorted(library.state['skills']) or '-'}\nrules en la librería: {library.state['rules'] or '-'}")
+    print(f"name-only skills: {sorted(library.state['skills']) or '-'}\nrules in the library: {library.state['rules'] or '-'}")
 
 
 if __name__ == "__main__":
