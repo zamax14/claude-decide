@@ -1,2 +1,3 @@
 .cache/
 results.jsonl
+run*.log
