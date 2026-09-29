@@ -1,8 +1,10 @@
 {
   "name": "claude-decide",
-  "description": "Un modelo de decisión (Laya) puntúa skills, rules, agentes y tools MCP para cada petición y le pasa a Claude solo lo que encaja",
-  "version": "0.2.1",
+  "description": "A small local decision model (Laya) picks which skills, rules, agents and MCP tools each request needs, so Claude Code reads only those",
+  "version": "0.3.0",
   "author": {
     "name": "zamax14"
-  }
+  },
+  "homepage": "https://github.com/zamax14/claude-decide",
+  "license": "MIT"
 }
