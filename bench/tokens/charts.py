@@ -15,7 +15,9 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "charts"
-MODEL = os.environ.get("BENCH_MODEL", "claude-haiku-4-5-20251001")
+DEFAULT = "claude-haiku-4-5-20251001"  # Las gráficas del README; otro modelo lleva su nombre en el archivo.
+MODEL = os.environ.get("BENCH_MODEL", DEFAULT)
+TAG = "" if MODEL == DEFAULT else "-" + MODEL.removeprefix("claude-")
 SIN, CON = "#eb6834", "#2a78d6"  # Paleta validada (dataviz): naranja sin, azul con.
 ENV = "25 skills, 10 agents and 5 rules"
 WITHOUT, WITH = "without claude-decide", "with claude-decide"
@@ -60,7 +62,7 @@ def summary(groups):
         style(ax, title, "tokens (input + cache + output)")
     fig.suptitle(f"{MODEL} · project with {ENV}", fontsize=10)
     fig.tight_layout()
-    fig.savefig(OUT / "summary.png", dpi=160)
+    fig.savefig(OUT / f"summary{TAG}.png", dpi=160)
 
 
 def per_task(groups):
@@ -86,7 +88,7 @@ def per_task(groups):
     ax.legend(frameon=False)
     fig.suptitle(f"{MODEL} · project with {ENV}", fontsize=10)
     fig.tight_layout()
-    fig.savefig(OUT / "tasks.png", dpi=160)
+    fig.savefig(OUT / f"tasks{TAG}.png", dpi=160)
 
 
 def main():
