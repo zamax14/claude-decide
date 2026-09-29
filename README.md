@@ -15,7 +15,7 @@ skills, rules, agents and MCP tools Claude actually needs, and hands it only tho
 
 </div>
 
-<p align="center"><img src="bench/tokens/charts/summary-opus-5-5.png" alt="Claude Opus 5.5, context of one message and tokens per turn, without and with claude-decide: 22.8k to 15.1k (-34%) and 25.0k to 17.2k (-31%)" width="820"></p>
+<p align="center"><img src="bench/tokens/charts/models.png" alt="Tokens per task, tokens per turn and cost per task, without and with claude-decide, on Claude Haiku 4.5, Sonnet 5.5 and Opus 5.5: Opus -39% tokens per task and -37% cost, Sonnet -35% and -38%, Haiku -14% and -17%" width="900"></p>
 
 ## Why
 
@@ -38,31 +38,65 @@ someone with a couple of collections installed would have: **25 skills, 10 agent
 The tasks: 10 real ones (a bug, a new command, report styling, a commit, a translation, CI, an SQL index, a refactor,
 a question and a greeting), plus one single-turn message. Each runs 3 times without and with claude-decide, on
 Claude Opus 5.5, Sonnet 5.5 and Haiku 4.5, with at most 15 turns and nothing from the user's own configuration.
-Opus ran with v2 of the model; Sonnet and Haiku with v1.
 
-| Model | claude-decide | Tokens per task | Tokens per turn | Context of one message | Cost per task | Tasks solved |
+Each cell reads **without → with** claude-decide; tasks solved are out of 30.
+
+| Claude model | claude-decide model | Tokens per task | Tokens per turn | Context of one message | Cost per task | Tasks solved |
 |---|---|---|---|---|---|---|
-| Opus 5.5 | without | 133,824 | 25,019 | 22,835 | $0.209 | 30/30 |
-| | **with** | **81,401 (−39%)** | **17,232 (−31%)** | **15,069 (−34%)** | **$0.132 (−37%)** | **30/30** |
-| Sonnet 5.5 | without | 106,750 | 22,514 | 22,685 | $0.101 | 28/30 |
-| | **with** | **69,080 (−35%)** | **16,317 (−28%)** | **14,911 (−34%)** | **$0.062 (−39%)** | **28/30** |
-| Haiku 4.5 | without | 206,428 | 24,771 | 24,751 | $0.061 | 22/30 |
-| | **with** | **177,027 (−14%)** | **20,583 (−17%)** | **20,377 (−18%)** | **$0.050 (−18%)** | **24/30** |
+| **Opus 5.5** | v2 | 134k → **81k (−39%)** | 25.0k → **17.2k (−31%)** | 22.8k → **15.1k (−34%)** | $0.209 → **$0.132 (−37%)** | 30 → 30 |
+| **Sonnet 5.5** | v1 | 107k → **69k (−35%)** | 22.5k → **16.3k (−28%)** | 22.7k → **14.9k (−34%)** | $0.101 → **$0.062 (−38%)** | 28 → 28 |
+| **Haiku 4.5** | v1 | 206k → **177k (−14%)** | 24.8k → **20.6k (−17%)** | 24.8k → **20.4k (−18%)** | $0.061 → **$0.050 (−17%)** | 22 → 24 |
 
-<p align="center"><img src="bench/tokens/charts/tasks-opus-5-5.png" alt="Claude Opus 5.5, tokens per task without and with claude-decide: every task uses 26-47% fewer tokens" width="820"></p>
+How to read it:
 
-- **Every task costs less on Opus**: 26–47% fewer tokens, and the longest ones take fewer turns (the SQL index, 11.3
-  to 8.3; report styling, 7 to 6). About 7,800 fewer tokens per message.
-- **Sonnet saves as much**: every task 26–49% cheaper ([chart](bench/tokens/charts/tasks-sonnet-5-5.png)), some in
-  fewer turns (a new command, 8.3 to 5.3; a refactor, 6.7 to 4.7).
-- **Haiku saves less but still saves**: about 4,400 fewer tokens per message, and 9 of the 10 tasks use 9–24% fewer
-  tokens ([chart](bench/tokens/charts/tasks.png)). The greeting's +6% is one extra turn.
-- **No loss in quality**: all 30 tasks solved with and without the plugin on Opus, the same 28 of 30 on Sonnet, 24
-  against 22 on Haiku. On Sonnet the failures are the translation, which Sonnet sometimes wrote to a new
-  `README.es.md` while the check reads `README.md`, under both conditions (the task now says to translate it in
-  place); on Haiku they are tasks that don't fit in 15 turns.
+- **Context of one message** is what the plugin removes directly: the descriptions of the skills, agents and rules the
+  request doesn't need. On Sonnet and Opus it is the same cut, about 7,800 tokens (−34%), with v1 and with v2 of the
+  model. On Haiku it is 4,400 tokens (−18%).
+- **Tokens per task** adds what the model does with a lighter context. Opus and Sonnet also take fewer turns with the
+  plugin (5.2 to 4.6 and 4.9 to 4.2 on average), so a task saves more than a message: −39% and −35%. Haiku takes 8
+  turns either way, so a task saves a little less than a message: −14%.
+- **Cost follows the tokens**: −37% on Opus, −38% on Sonnet, −17% on Haiku, at API prices.
+- **No loss in quality**: every model solves as many tasks or more with the plugin.
 - **The saving grows with the catalog.** With 100 skills, 50 agents and 15 rules, one message drops from 63k to
   33k tokens (−48%).
+
+Each model, task by task:
+
+<details>
+<summary><b>Opus 5.5</b> (claude-decide v2): every task uses 26–47% fewer tokens</summary>
+
+<p align="center"><img src="bench/tokens/charts/summary-opus-5-5.png" alt="Claude Opus 5.5, context of one message and tokens per turn, without and with claude-decide: 22.8k to 15.1k (-34%) and 25.0k to 17.2k (-31%)" width="820"></p>
+<p align="center"><img src="bench/tokens/charts/tasks-opus-5-5.png" alt="Claude Opus 5.5, tokens per task without and with claude-decide: every task uses 26-47% fewer tokens" width="820"></p>
+
+- The longest tasks save the most, in fewer turns: the SQL index goes from 11.3 to 8.3 turns (−47% tokens), report
+  styling from 7 to 6 (−44%).
+- All 30 tasks solved under both conditions.
+
+</details>
+
+<details>
+<summary><b>Sonnet 5.5</b> (claude-decide v1): every task uses 26–49% fewer tokens</summary>
+
+<p align="center"><img src="bench/tokens/charts/summary-sonnet-5-5.png" alt="Claude Sonnet 5.5, context of one message and tokens per turn, without and with claude-decide: 22.7k to 14.9k (-34%) and 22.5k to 16.3k (-28%)" width="820"></p>
+<p align="center"><img src="bench/tokens/charts/tasks-sonnet-5-5.png" alt="Claude Sonnet 5.5, tokens per task without and with claude-decide: every task uses 26-49% fewer tokens" width="820"></p>
+
+- Some tasks take fewer turns: a new command, 8.3 to 5.3; a refactor, 6.7 to 4.7.
+- The same 28 of 30 solved under both conditions. The failures are the translation, which Sonnet sometimes wrote to
+  a new `README.es.md` while the check reads `README.md` (the task now says to translate it in place).
+
+</details>
+
+<details>
+<summary><b>Haiku 4.5</b> (claude-decide v1): 9 of 10 tasks use 9–24% fewer tokens</summary>
+
+<p align="center"><img src="bench/tokens/charts/summary.png" alt="Claude Haiku 4.5, context of one message and tokens per turn, without and with claude-decide: 24.8k to 20.4k (-18%) and 24.8k to 20.6k (-17%)" width="820"></p>
+<p align="center"><img src="bench/tokens/charts/tasks.png" alt="Claude Haiku 4.5, tokens per task without and with claude-decide: 9 of 10 tasks use 9-24% fewer tokens" width="820"></p>
+
+- The greeting's +6% is one extra turn.
+- 24 of 30 solved with the plugin, 22 without. The failures are tasks that don't fit in 15 turns, under both
+  conditions.
+
+</details>
 
 Reproduce it with [`bench/tokens/`](bench/tokens).
 
